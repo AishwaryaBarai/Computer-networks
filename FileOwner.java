@@ -1,5 +1,3 @@
-package com.cnfinal;
-
 import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
