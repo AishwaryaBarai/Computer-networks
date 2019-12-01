@@ -161,10 +161,10 @@ public class Peer {
                                 System.out.println(socketUtil.readMessage());
                                 socketUtil.sendMessage("success");
                                 chunks.add(chunkId);
-                                Thread.sleep(1000);
+                                Thread.sleep(100);
                             } else {
                                 System.out.println(logPrefix2 + "peer:" + portStr + " don't have the chunk:" + chunkId + " yet!");
-                                Thread.sleep(1000);
+                                Thread.sleep(100);
                             }
                         }
                         for (String chunkId : chunks) {
@@ -177,7 +177,7 @@ public class Peer {
                         if (!needChunks.isEmpty())
                             flag = true;
                         socketUtil.close();
-                        Thread.sleep(2000);
+                        Thread.sleep(1000);
                     } catch (Exception ioException) {
                         flag = true;
                         System.out.println(logPrefix2 + "failed connect to peer:" + portStr);
@@ -223,7 +223,7 @@ public class Peer {
                     System.out.println(logPrefix2 + "something wrong; disconnecting peer..");
                     return;
                 }
-                String peerPort=strs[5];
+                String peerPort = strs[5];
                 if (!knownPeers.contains(peerPort)) {
                     System.out.println(logPrefix2 + "new peer identified port:" + peerPort);
                     knownPeers.add(peerPort);
@@ -238,20 +238,21 @@ public class Peer {
                     if (req.split(" ").length < 2)
                         continue;
                     else {
-                        String chunkId=req.split(" ")[1];
+                        String chunkId = req.split(" ")[1];
                         System.out.println(logPrefix2 + "peer:" + peerPort + "  asking for the chunk " + chunkId);
                         if (haveChunks.containsKey(chunkId)) {
                             socketUtil.sendMessage("i have");
                             System.out.println(logPrefix2 + "sending chunk:" + chunkId + " to peer:" + peerPort);
                             Path path = Paths.get(tempDir + chunkId);
                             Files.copy(path, socketUtil.getOut());
+                            socketUtil.sendMessage("sent chunk_" + chunkId);
                             if (!socketUtil.readMessage().equals("success")) {
                                 System.out.println(logPrefix2 + "something wrong; disconnecting peer..");
                                 return;
                             } else {
                                 haveChunks.put(chunkId, true);
                             }
-                            Thread.sleep(1000);
+                            Thread.sleep(100);
                         } else {
                             System.out.println(logPrefix2 + "i don't have chunk:" + chunkId);
                             socketUtil.sendMessage("don't have");
