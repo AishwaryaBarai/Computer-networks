@@ -11,7 +11,7 @@ import java.util.*;
 
 public class Peer {
     private static String logPrefix;
-    private Map<Integer, Integer> chuckInfo = new HashMap<>();
+    private List<Integer> chuckInfo = new ArrayList<>();
     private Path currentRelativePath = Paths.get("");
     private String currentDir = currentRelativePath.toAbsolutePath().toString() + "/";
     private String tempDir = currentDir + "temp/";
@@ -35,78 +35,26 @@ public class Peer {
     }
 
     private void run(String fOPort, String publishPort, String knownPeer) {
-        String input;
-        String logPrefix2 = logPrefix + " [init]";
         try {
             if (!Files.exists(Paths.get(tempDir)))
                 Files.createDirectory(Paths.get(tempDir));
             pubPort = Integer.parseInt(publishPort);
             knownPeers.add(knownPeer);
             fileOwnerPort = Integer.parseInt(fOPort);
-            Socket requestSocket = new Socket(host, fileOwnerPort);
-            SocketUtil socketUtil = new SocketUtil(requestSocket);
 
-            socketUtil.sendMessage("hello");
-            if (socketUtil.readMessage().equals("hello")) {
-                String str = socketUtil.readMessage();
-                if (str.split("filename").length < 2) {
-                    System.err.println(logPrefix2 + "connection error with server; please restart the peer and try again");
-                    return;
-                }
-                fileName = str.split("filename")[1];
-            } else {
-                System.err.println(logPrefix2 + "connection error with server; please restart the peer and try again");
-            }
-            socketUtil.sendMessage("get peerId");
-            peerId = socketUtil.readMessage();
+            receiveChunksFromServer();
 
-            System.out.println(logPrefix2 + "requesting chunk info..");
-            try {
-                socketUtil.sendMessage("get chunkInfo");
-                chuckInfo = (Map) socketUtil.getIn().readObject();
-                socketUtil.sendMessage("success");
-            } catch (Exception e) {
-                System.out.println(logPrefix2 + "unable to parse chuck info" + e.getMessage());
-                System.exit(0);
-            }
-            for (int chunkId : chuckInfo.keySet()) {
-                needChunks.add(String.valueOf(chunkId));
-            }
-            System.out.println(logPrefix2 + "chunk info fetched successfully! " + chuckInfo.get(1));
-            System.out.println(logPrefix2 + "requesting chunks from the server..");
-            try {
-                socketUtil.sendMessage("get chunks");
-                if (!socketUtil.readMessage().equals("sending chunks")) {
-                    System.out.println(logPrefix2 + "error while receiving chunks from server");
-                    return;
-                }
-                socketUtil.sendMessage("ok");
-                String str = socketUtil.readMessage();
-                System.out.println(logPrefix2 + "startin to receive chunk " + str);
-                while (str.equals("") || !str.equals("complete")) {
-                    System.out.println(logPrefix2 + "fetching chunk:" + str + " from server..");
-                    Path path = Paths.get(tempDir + str);
-                    Files.copy(socketUtil.getIn(), path, StandardCopyOption.REPLACE_EXISTING);
-                    //todo checksum validation
-                    needChunks.remove(str);
-                    haveChunks.put(str, false);
-                    str = socketUtil.readMessage();
-                }
-                socketUtil.sendMessage("success");
-                System.out.println(logPrefix2 + "chunks retrieved from the server successfully");
-                System.out.println(logPrefix2 + "disconnecting from server..");
-                socketUtil.close();
-                Thread t1 = new Thread(() -> {
-                    receiveChunks();
-                    System.out.println("stopped receiving chunks");
-                });
-                t1.start();
-                publishChunks();
-                System.out.println("stopped publishing chunks..");
-            } catch (Exception e) {
-                System.out.println("error while receiving file from the server: " + e.getMessage());
-                e.printStackTrace();
-            }
+            Thread t1 = new Thread(() -> {
+                receiveChunks();
+                System.out.println("stopped receiving chunks");
+            });
+            t1.start();
+
+            publishChunks();
+
+            System.out.println("stopped publishing chunks..");
+
+
         } catch (ConnectException e) {
             System.err.println("Connection refused. You need to initiate a server first.");
             System.exit(0);
@@ -118,6 +66,69 @@ public class Peer {
             System.err.println("Cannot connect with the server: " + ioException.getMessage());
             System.exit(0);
         } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    private void receiveChunksFromServer() throws Exception {
+        String logPrefix2 = logPrefix + " [server_chunks_receiver]";
+
+        Socket requestSocket = new Socket(host, fileOwnerPort);
+        SocketUtil socketUtil = new SocketUtil(requestSocket);
+
+        socketUtil.sendMessage("hello");
+        if (socketUtil.readMessage().equals("hello")) {
+            String str = socketUtil.readMessage();
+            if (str.split("filename").length < 2) {
+                System.err.println(logPrefix2 + "connection error with server; please restart the peer and try again");
+                return;
+            }
+            fileName = str.split("filename")[1];
+        } else {
+            System.err.println(logPrefix2 + "connection error with server; please restart the peer and try again");
+        }
+        socketUtil.sendMessage("get peerId");
+        peerId = socketUtil.readMessage();
+
+        System.out.println(logPrefix2 + "requesting chunk info..");
+        try {
+            socketUtil.sendMessage("get chunkInfo");
+            chuckInfo = (List<Integer>) socketUtil.getIn().readObject();
+            socketUtil.sendMessage("success");
+        } catch (Exception e) {
+            System.out.println(logPrefix2 + "unable to parse chuck info" + e.getMessage());
+            System.exit(0);
+        }
+        for (int chunkId : chuckInfo) {
+            needChunks.add(String.valueOf(chunkId));
+        }
+        System.out.println(logPrefix2 + "chunk info fetched successfully! " + chuckInfo.get(1));
+        System.out.println(logPrefix2 + "requesting chunks from the server..");
+
+        try {
+            socketUtil.sendMessage("get chunks");
+            if (!socketUtil.readMessage().equals("sending chunks")) {
+                System.out.println(logPrefix2 + "error while receiving chunks from server");
+                return;
+            }
+            socketUtil.sendMessage("ok");
+            String str = socketUtil.readMessage();
+            System.out.println(logPrefix2 + "startin to receive chunk " + str);
+            while (str.equals("") || !str.equals("complete")) {
+                System.out.println(logPrefix2 + "fetching chunk:" + str + " from server..");
+                Path path = Paths.get(tempDir + str);
+                Files.copy(socketUtil.getIn(), path, StandardCopyOption.REPLACE_EXISTING);
+                needChunks.remove(str);
+                haveChunks.put(str, false);
+                str = socketUtil.readMessage();
+            }
+            socketUtil.sendMessage("success");
+            System.out.println(logPrefix2 + "chunks retrieved from the server successfully");
+            System.out.println(logPrefix2 + "disconnecting from server..");
+            socketUtil.close();
+        } catch (Exception e) {
+            System.out.println("error while receiving file from the server: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -161,16 +172,16 @@ public class Peer {
                                 System.out.println(socketUtil.readMessage());
                                 socketUtil.sendMessage("success");
                                 chunks.add(chunkId);
+                                haveChunks.put(chunkId, false);
                                 Thread.sleep(100);
                             } else {
                                 System.out.println(logPrefix2 + "peer:" + portStr + " don't have the chunk:" + chunkId + " yet!");
-                                Thread.sleep(100);
+                                Thread.sleep(500);
                             }
                         }
                         for (String chunkId : chunks) {
                             System.out.println(logPrefix2 + "updating status for chunk..........................." + chunkId);
                             needChunks.remove(chunkId);
-                            haveChunks.put(chunkId, false);
                         }
                         System.out.println(logPrefix2 + "disconnecting from peer: " + portStr);
                         socketUtil.sendMessage("bye");
@@ -187,7 +198,7 @@ public class Peer {
             }
             System.out.println(logPrefix2 + "i have all chunk with me; combining chunks");
             FileOutputStream fos = new FileOutputStream(currentDir + fileName);
-            for (Integer chunkId : chuckInfo.keySet()) {
+            for (Integer chunkId : chuckInfo) {
                 System.out.println("combining chunks......." + chunkId);
                 fos.write(Files.readAllBytes(Paths.get(tempDir + chunkId)));
                 fos.flush();
@@ -295,7 +306,6 @@ public class Peer {
 
         void sendMessage(String msg) {
             try {
-//                System.out.println("Me: " + msg);
                 out.writeObject(msg);
                 out.flush();
             } catch (Exception e) {
@@ -316,7 +326,6 @@ public class Peer {
             String str = "";
             try {
                 str = (String) in.readObject();
-//                System.out.println("remote: " + str);
             } catch (ClassNotFoundException ce) {
                 System.err.println("unable to parse message: " + ce.getMessage());
             } catch (SocketException e) {
