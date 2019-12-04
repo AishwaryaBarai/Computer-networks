@@ -6,15 +6,15 @@ import java.net.SocketException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 public class FileOwner {
-    private static long chunkSize = 100000;
+    private static long chunkSize = 102400;
     private static int noOfPeers = 5;
     private static String inputFile = "/Users/apple/Desktop/test.pdf";
 
-    private Map<Integer, Integer> chuckInfo = new HashMap<>();
+    private List<Integer> chuckInfo = new ArrayList<>();
     private ServerSocket sSocket;
     private int threadIndex;
     private Path currentRelativePath = Paths.get("");
@@ -92,12 +92,16 @@ public class FileOwner {
 
     private void initFileChunk() {
         try {
-            System.out.println("[server] starting chuck initialization..");
+            System.out.println("[server] starting chunck initialization..");
             File file = new File(inputFile);
             FileInputStream is = new FileInputStream(file);
             long fileSize = file.length();
+            if (fileSize / chunkSize < 5){
+                chunkSize = fileSize / 5;
+                System.out.println("chunk_size is too large for the file_size. resetting to:"+chunkSize);
+            }
             System.out.println("[server] file size: " + fileSize + " chunk size:" + chunkSize + " # of chunks:" + fileSize / chunkSize);
-            byte[] chunk = new byte[(int) chunkSize];  //todo cast to int
+            byte[] chunk = new byte[(int) chunkSize];
             int chunkLen = 0;
             int index = 0;
             while ((chunkLen = is.read(chunk)) != -1) {
@@ -105,7 +109,7 @@ public class FileOwner {
                     Files.createDirectory(Paths.get(tempDir));
                 Path path = Paths.get(tempDir + index);
                 Files.write(path, chunk);
-                chuckInfo.put(index, 1);
+                chuckInfo.add(index);
                 chunk = new byte[(int) chunkSize];  // flushing old chunk and creating new space
                 index++;
             }
@@ -117,10 +121,10 @@ public class FileOwner {
 
 
     class ChunkDistributor extends Thread {
-        Socket connection;   //serversocket used to listen on port number 8000
+        Socket connection;
         int peerIndex;
-        ObjectOutputStream out;  //stream write to the socket
-        ObjectInputStream in;    //stream read from the socket
+        ObjectOutputStream out;
+        ObjectInputStream in;
 
         ChunkDistributor(Socket connection, int peerIndex) {
             this.connection = connection;
@@ -162,11 +166,12 @@ public class FileOwner {
 
                             if (peerIndex == noOfPeers)
                                 endingChunk = (peerIndex * (chuckInfo.size() / noOfPeers) + (chuckInfo.size() % noOfPeers)) - 1;
-                            else
+                            else if (peerIndex < noOfPeers)
                                 endingChunk = (peerIndex * (chuckInfo.size() / noOfPeers)) - 1;
-
-//                            startingChunk=0;
-//                            endingChunk=map.size()-1;
+                            else {
+                                startingChunk = 0;
+                                endingChunk = 0;
+                            }
 
                             System.out.println("[server] sending chunks [" + startingChunk + "-" + endingChunk + "] to client-" + peerIndex);
                             for (int i = startingChunk; i <= endingChunk; i++) {
